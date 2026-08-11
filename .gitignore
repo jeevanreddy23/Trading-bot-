@@ -1,0 +1,8 @@
+.env
+state/
+state-live/
+state_test/
+__pycache__/
+*.pyc
+dashboard.html
+deploy/*.tgz

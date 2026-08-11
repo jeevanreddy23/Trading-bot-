@@ -1,0 +1,9 @@
+services:
+  fleet:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "run.py", "--config", "config.live.yaml", "--live"]
+    volumes:
+      - ./state-live:/app/state/live

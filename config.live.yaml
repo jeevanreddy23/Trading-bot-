@@ -1,0 +1,61 @@
+# Conservative Kraken-only live profile for the initial A$192.25 account.
+# Cross-venue arbitrage is deliberately disabled: a single Kraken account
+# cannot execute both inventory-backed legs atomically.
+
+base_currency: AUD
+starting_equity: 192.25
+mode: live
+
+loop:
+  interval_seconds: 15
+  state_dir: state/live
+
+data:
+  provider_order: [ccxt, sim]
+  sim_seed: 42
+  sim_accel: 1
+
+markets:
+  crypto:
+    enabled: true
+    venues: [kraken]
+    arb_symbols: []
+    momentum_symbols: ["BTC/AUD", "ETH/AUD", "SOL/AUD"]
+    taker_fees_bps: {kraken: 40, default: 40}
+  stocks:
+    enabled: false
+    asx: []
+    us: []
+  commodities:
+    enabled: false
+    symbols: []
+  fx:
+    enabled: false
+    symbols: []
+
+agents:
+  crypto_arb:      {enabled: false, interval: 15, min_net_edge_bps: 5, max_leg_notional_aud: 0}
+  crypto_momentum: {enabled: true, interval: 300}
+  stocks:          {enabled: false, interval: 600}
+  commodities:     {enabled: false, interval: 600}
+  fx:              {enabled: false, interval: 300}
+
+risk:
+  max_open_positions: 1
+  max_position_pct_equity: 15
+  risk_per_trade_pct: 0.25
+  max_gross_leverage: 0.25
+  max_market_exposure_pct: 25
+  max_daily_loss_pct: 1.0
+  kill_drawdown_pct: 3.0
+  allow_shorts: {crypto: false, stocks: false, commodities: false, fx: false}
+
+execution:
+  paper:
+    slippage_bps: {crypto: 8, stocks: 4, commodities: 6, fx: 1}
+    fee_bps:      {crypto: 40, stocks: 8, commodities: 5, fx: 2}
+  live:
+    crypto_venue: kraken
+    confirm_env: LIVE_TRADING_ACK
+    max_order_notional_aud: 20
+    oanda_env: practice

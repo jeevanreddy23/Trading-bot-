@@ -1,0 +1,8 @@
+.git
+.env
+state
+state-live
+results
+__pycache__
+*.pyc
+dashboard.html
