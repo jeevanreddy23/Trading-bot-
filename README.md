@@ -60,6 +60,9 @@ margin, opening shorts, synthetic/stale inputs, and live cross-venue arb.
 Every quote is tagged with its source (`kraken`, `yahoo`, `sim:okx`…) so
 synthetic data can never masquerade as live. With no internet, the whole fleet
 runs against a labelled synthetic market — that's the offline demo/test mode.
+The default paper profile enables all six top-level agents. Its crypto ensemble
+also runs all four voters (regime, momentum, reversal, and volatility) before
+the hard risk contract sees an intention.
 
 ## Quickstart
 
@@ -70,7 +73,7 @@ python run.py --reset            # paper trade on real data, runs forever
 python run.py --cycles 60        # bounded run
 python run.py --sim --cycles 60  # offline synthetic demo
 python backtest/backtest.py      # backtest the rule-sets on ~2y of real data
-python tests/test_engine.py      # 20 deterministic engine checks
+python tests/test_engine.py      # 21 deterministic engine checks
 python tests/test_market_data.py # Kraken v2 schema + official checksum fixture
 ```
 
@@ -121,7 +124,7 @@ fleet/coordinator.py    cycle loop, atomic arb handling, halt logic
 fleet/risk.py           sizing + every limit
 fleet/portfolio.py      AUD ledger, positions, trades.jsonl
 fleet/datafeeds.py      ccxt / yahoo / stooq / sim providers + router
-fleet/agents/           the five agents
+fleet/agents/           six fleet agents + four crypto ensemble voters
 fleet/execution/        paper + ccxt/OANDA/IBKR live executors
 fleet/dashboard.py      self-contained HTML dashboard
 backtest/backtest.py    vectorised rule-set backtests
@@ -139,7 +142,8 @@ GitHub main -> Actions tests -> SSH deploy -> OVH Docker Compose
                                          |-> Kraken fleet
                                          |-> PostgreSQL snapshots
                                          |-> authenticated monitor API
-Vercel dashboard -> token-authenticated HTTPS -> monitor API
+Vercel dashboard -> Kraken public data + Yahoo research data
+                 -> token-authenticated HTTPS -> monitor API
 ```
 
 On the VPS, clone the repository to `/opt/trading-bot`, copy `.env.example` to
@@ -156,6 +160,11 @@ Configure these GitHub Actions secrets in the `production` environment:
 Configure `MONITOR_ORIGIN` and `MONITOR_TOKEN` in Vercel. The origin is the
 HTTPS hostname in `MONITOR_DOMAIN`; the token must match the VPS `.env`.
 Pushes to `main` run tests, build the image, and deploy that exact commit.
+
+The public portal uses Kraken REST/WebSocket data for crypto and a separate,
+failure-isolated Yahoo Finance chart feed for gold, silver, crude oil, AUD/USD,
+S&P 500, ASX 200, and BHP. Yahoo values are labelled delayed/research-only and
+are never treated as executable Kraken prices.
 
 ## Disclaimers
 

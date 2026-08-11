@@ -30,6 +30,11 @@ def main():
     co = Coordinator(cfg, force_sim=True, reset=True, quiet=True)
     co.feeds.refresh()
     L, F = co.ledger, co.feeds
+    check("all configured research agents enabled",
+          {agent.name for agent in co.agents} == {
+              "crypto_arb", "crypto_ensemble", "crypto_momentum",
+              "stocks", "commodities", "fx",
+          }, ", ".join(agent.name for agent in co.agents))
     check("synthetic enabled markets fail live-data readiness",
           F.simulated and not F.enabled_quotes_live())
     eq0 = L.equity(F.quotes)
