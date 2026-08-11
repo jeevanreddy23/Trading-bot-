@@ -113,6 +113,34 @@ tests/test_engine.py    deterministic engine verification
 docs/GOING_LIVE.md      the real-money checklist
 ```
 
+## Production deployment
+
+The production split keeps execution and secrets on the Sydney VPS while
+Vercel serves a read-only dashboard:
+
+```text
+GitHub main -> Actions tests -> SSH deploy -> OVH Docker Compose
+                                         |-> Kraken fleet
+                                         |-> PostgreSQL snapshots
+                                         |-> authenticated monitor API
+Vercel dashboard -> token-authenticated HTTPS -> monitor API
+```
+
+On the VPS, clone the repository to `/opt/trading-bot`, copy `.env.example` to
+`.env`, replace every placeholder, and run `bash deploy/preflight.sh`. The
+container runs in paper mode unless the VPS-local `.env` contains the exact
+live acknowledgement. Kraken keys and PostgreSQL are never sent to Vercel.
+
+Configure these GitHub Actions secrets in the `production` environment:
+
+- `OVH_HOST` and `OVH_USER`
+- `OVH_SSH_KEY` (a deploy-only private key)
+- `OVH_KNOWN_HOSTS` (the pinned `ssh-keyscan` output verified out of band)
+
+Configure `MONITOR_ORIGIN` and `MONITOR_TOKEN` in Vercel. The origin is the
+HTTPS hostname in `MONITOR_DOMAIN`; the token must match the VPS `.env`.
+Pushes to `main` run tests, build the image, and deploy that exact commit.
+
 ## Disclaimers
 
 Not financial advice; for education and personal use. Trading involves risk

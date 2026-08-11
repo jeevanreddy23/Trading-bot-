@@ -1,9 +1,86 @@
+name: trading-bot
+
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fleet}
+      POSTGRES_USER: ${POSTGRES_USER:-fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
   fleet:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env
-    command: ["python", "run.py", "--config", "config.live.yaml", "--live"]
+    env_file: [.env]
+    command: ["bash", "deploy/run-fleet.sh"]
     volumes:
-      - ./state-live:/app/state/live
+      - fleet-state:/app/state/live
+    networks: [internal]
+
+  collector:
+    build: .
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      FLEET_STATE_PATH: /app/state/live/state.json
+    command: ["python", "-m", "monitor.collector"]
+    volumes:
+      - fleet-state:/app/state/live:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  monitor:
+    build: .
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      MONITOR_TOKEN: ${MONITOR_TOKEN:?set MONITOR_TOKEN in .env}
+    command: ["uvicorn", "monitor.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    expose: ["8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      MONITOR_DOMAIN: ${MONITOR_DOMAIN:?set MONITOR_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [monitor]
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  postgres-data:
+  fleet-state:
+  caddy-data:
+  caddy-config:

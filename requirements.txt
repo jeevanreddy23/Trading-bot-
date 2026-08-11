@@ -4,5 +4,8 @@ pandas>=2.0
 numpy>=1.26
 PyYAML>=6.0
 requests>=2.31
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+psycopg[binary]>=3.2,<4
 # optional, only needed for live ASX/US stocks + futures via Interactive Brokers:
 # ib_insync>=0.9.86

@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/aussie-agent-fleet
+repo_dir="${DEPLOY_PATH:-/opt/trading-bot}"
+cd "$repo_dir"
 umask 077
 
 if [[ ! -f .env ]]; then
-  echo "Missing /opt/aussie-agent-fleet/.env"
+  echo "Missing $repo_dir/.env"
   exit 1
 fi
 
-mkdir -p state-live
-chmod 700 state-live
-
-docker compose build --pull
+docker compose build --pull fleet
 docker compose run --rm --no-deps fleet \
   python run.py --config config.live.yaml --cycles 1
 
