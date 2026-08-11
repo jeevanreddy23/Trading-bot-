@@ -19,6 +19,8 @@ data:
   provider_order: [ccxt, yahoo, stooq, sim]
   sim_seed: 42
   sim_accel: 4                # speeds up simulated price motion so short demos visibly move
+  kraken_ws_snapshot: state/kraken_stream.json
+  max_quote_age_seconds: 45
 
 markets:
   crypto:
@@ -41,7 +43,8 @@ markets:
 
 agents:
   crypto_arb:      {enabled: true, interval: 15, min_net_edge_bps: 5, max_leg_notional_aud: 500}
-  crypto_momentum: {enabled: true, interval: 300}
+  crypto_momentum: {enabled: false, interval: 300}
+  crypto_ensemble: {enabled: true, interval: 300, min_probability: 0.62, min_ev_pct: 0.05, max_spread_pct: 0.25, max_quote_age_seconds: 45, max_atr_pct: 4.0, round_trip_fees_pct: 0.4}
   stocks:          {enabled: true, interval: 600}
   commodities:     {enabled: true, interval: 600}
   fx:              {enabled: true, interval: 300}
@@ -56,6 +59,9 @@ risk:
   max_market_exposure_pct: 40      # cap per market class (% of equity)
   max_daily_loss_pct: 2.0          # stop opening new positions for the (Sydney) day
   kill_drawdown_pct: 6.0           # flatten everything and halt
+  max_spread_pct: 0.25
+  max_quote_age_seconds: 45
+  max_hold_days: 90
   allow_shorts: {crypto: false, stocks: false, commodities: true, fx: true}
 
 execution:
@@ -66,4 +72,5 @@ execution:
     crypto_venue: kraken           # which venue live crypto orders route to
     confirm_env: LIVE_TRADING_ACK  # env var that must equal I_UNDERSTAND_THE_RISKS
     max_order_notional_aud: 200    # hard per-order cap while you build trust in the system
+    margin_enabled: false           # spot only; the executor rejects short/margin openings
     oanda_env: practice            # practice | live

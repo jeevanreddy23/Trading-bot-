@@ -25,6 +25,8 @@ class CcxtLiveExecutor(Executor):
     def __init__(self, cfg: dict):
         import ccxt
         self.cfg = cfg
+        if dig(cfg, "execution.live.margin_enabled", False):
+            raise RuntimeError("margin execution is not supported by this spot-only safety adapter")
         venue = dig(cfg, "execution.live.crypto_venue", "kraken")
         self.venue = venue
         key = os.environ.get(f"{venue.upper()}_API_KEY")

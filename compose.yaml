@@ -26,6 +26,17 @@ services:
       - fleet-state:/app/state/live
     networks: [internal]
 
+  kraken-stream:
+    build: .
+    restart: unless-stopped
+    environment:
+      KRAKEN_WS_SYMBOLS: ${KRAKEN_WS_SYMBOLS:-BTC/AUD,ETH/AUD,SOL/AUD}
+      KRAKEN_WS_OUTPUT: /app/state/live/kraken_stream.json
+    command: ["python", "-m", "fleet.market_data.kraken_ws"]
+    volumes:
+      - fleet-state:/app/state/live
+    networks: [internal]
+
   collector:
     build: .
     restart: unless-stopped

@@ -21,6 +21,21 @@ only what proved itself.** Nothing here is financial advice.
 
 ## What it does
 
+The Kraken path is intentionally split into proposing and authorizing layers:
+
+```text
+Kraken WebSocket v2 (ticker / L2 book / OHLC / trades)
+  -> regime + momentum + reversal + volatility votes
+  -> probability and cost-adjusted expected-value ensemble
+  -> deterministic risk contract (freshness, spread, size, exposure,
+     daily loss, drawdown, 90-day max hold, kill switch)
+  -> CCXT spot executor
+```
+
+The L2 collector verifies Kraken's CRC32 checksum before publishing a book.
+An agent cannot bypass the risk contract, and the Kraken adapter rejects
+margin, opening shorts, synthetic/stale inputs, and live cross-venue arb.
+
 ```
                     ┌─────────────────────────────┐
                     │        Coordinator          │  15s cycle, state.json,
@@ -55,7 +70,8 @@ python run.py --reset            # paper trade on real data, runs forever
 python run.py --cycles 60        # bounded run
 python run.py --sim --cycles 60  # offline synthetic demo
 python backtest/backtest.py      # backtest the rule-sets on ~2y of real data
-python tests/test_engine.py      # 17 deterministic engine checks
+python tests/test_engine.py      # 20 deterministic engine checks
+python tests/test_market_data.py # Kraken v2 schema + official checksum fixture
 ```
 
 Open `dashboard.html` in a browser — it re-renders every few cycles and
