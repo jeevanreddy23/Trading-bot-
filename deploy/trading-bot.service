@@ -1,0 +1,22 @@
+[Unit]
+Description=Aussie Agent Fleet Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=@DEPLOY_PATH@
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@DEPLOY_PATH@
+ExecStartPre=/usr/bin/docker compose config --quiet
+ExecStart=/usr/bin/docker compose up -d --remove-orphans --wait --wait-timeout 240
+ExecReload=/usr/bin/docker compose up -d --remove-orphans --wait --wait-timeout 240
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

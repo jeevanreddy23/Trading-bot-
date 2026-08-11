@@ -75,6 +75,7 @@ python run.py --sim --cycles 60  # offline synthetic demo
 python backtest/backtest.py      # backtest the rule-sets on ~2y of real data
 python tests/test_engine.py      # 21 deterministic engine checks
 python tests/test_market_data.py # Kraken v2 schema + official checksum fixture
+python tests/test_healthcheck.py # stale-state and stream integrity probes
 ```
 
 Open `dashboard.html` in a browser — it re-renders every few cycles and
@@ -150,6 +151,10 @@ On the VPS, clone the repository to `/opt/trading-bot`, copy `.env.example` to
 `.env`, replace every placeholder, and run `bash deploy/preflight.sh`. The
 container runs in paper mode unless the VPS-local `.env` contains the exact
 live acknowledgement. Kraken keys and PostgreSQL are never sent to Vercel.
+The deployment installs `trading-bot.service`, which re-establishes the Docker
+Compose project after a host reboot. Compose restart policies, bounded logs,
+and freshness-aware health checks cover the fleet, Kraken stream, collector,
+monitor, Caddy, and PostgreSQL services.
 
 Configure these GitHub Actions secrets in the `production` environment:
 

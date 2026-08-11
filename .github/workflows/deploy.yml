@@ -27,7 +27,13 @@ jobs:
       - run: python tests/test_engine.py
       - run: python tests/test_market_data.py
       - run: python tests/test_monitor.py
+      - run: python tests/test_healthcheck.py
       - run: node tests/test_market_api.mjs
+      - name: Validate deployment harness
+        run: |
+          bash -n deploy/run-fleet.sh deploy/preflight.sh deploy/remote-deploy.sh
+          cp .env.example .env
+          docker compose config --quiet
       - run: docker build --tag trading-bot:${{ github.sha }} .
 
   deploy:

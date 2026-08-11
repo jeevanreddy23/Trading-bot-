@@ -22,5 +22,14 @@ fi
 
 docker compose config --quiet
 docker compose build --pull fleet collector monitor
-docker compose up -d --remove-orphans
+unit_template="$deploy_path/deploy/trading-bot.service"
+unit_tmp="$(mktemp)"
+sed "s|@DEPLOY_PATH@|$deploy_path|g" "$unit_template" > "$unit_tmp"
+sudo install -m 0644 "$unit_tmp" /etc/systemd/system/trading-bot.service
+rm -f "$unit_tmp"
+sudo systemctl daemon-reload
+sudo systemctl enable trading-bot.service
+sudo systemctl restart trading-bot.service
+docker compose up -d --remove-orphans --wait --wait-timeout 240
 docker compose ps
+systemctl --no-pager --full status trading-bot.service

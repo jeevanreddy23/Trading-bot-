@@ -20,26 +20,49 @@ services:
   fleet:
     build: .
     restart: unless-stopped
+    init: true
     env_file: [.env]
     command: ["bash", "deploy/run-fleet.sh"]
     volumes:
       - fleet-state:/app/state/live
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "fleet", "/app/state/live/state.json", "180"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 180s
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     networks: [internal]
 
   kraken-stream:
     build: .
     restart: unless-stopped
+    init: true
     environment:
       KRAKEN_WS_SYMBOLS: ${KRAKEN_WS_SYMBOLS:-BTC/AUD,ETH/AUD,SOL/AUD}
       KRAKEN_WS_OUTPUT: /app/state/live/kraken_stream.json
     command: ["python", "-m", "fleet.market_data.kraken_ws"]
     volumes:
       - fleet-state:/app/state/live
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "stream", "/app/state/live/kraken_stream.json", "90"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     networks: [internal]
 
   collector:
     build: .
     restart: unless-stopped
+    init: true
     environment:
       PGHOST: postgres
       PGPORT: "5432"
@@ -53,11 +76,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "database", "180"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 180s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     networks: [internal]
 
   monitor:
     build: .
     restart: unless-stopped
+    init: true
     environment:
       PGHOST: postgres
       PGPORT: "5432"
@@ -70,6 +104,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "http", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     networks: [internal]
 
   caddy:
@@ -85,6 +129,15 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on: [monitor]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://monitor:8000/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     networks: [internal]
 
 networks:
