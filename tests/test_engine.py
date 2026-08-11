@@ -29,6 +29,8 @@ def main():
     co = Coordinator(cfg, force_sim=True, reset=True, quiet=True)
     co.feeds.refresh()
     L, F = co.ledger, co.feeds
+    check("synthetic enabled markets fail live-data readiness",
+          F.simulated and not F.enabled_quotes_live())
     eq0 = L.equity(F.quotes)
     check("starting equity", abs(eq0 - cfg["starting_equity"]) < 1e-6, f"= {eq0}")
 

@@ -46,6 +46,7 @@ class Coordinator:
         self.executors: dict = {"paper": PaperExecutor(cfg)}
         if live:
             self._arm_live()
+        self.ctx.live = self.live
 
     # ------------------------------------------------------------------ live
     def _arm_live(self):
@@ -57,8 +58,9 @@ class Coordinator:
         if os.environ.get(ack_var) != "I_UNDERSTAND_THE_RISKS":
             self.log(f"[live] refused: env {ack_var} != I_UNDERSTAND_THE_RISKS")
             return
-        if self.feeds.simulated:
-            self.log("[live] refused: no live data feed reachable (sim only)")
+        self.feeds.refresh()
+        if self.feeds.simulated or not self.feeds.enabled_quotes_live():
+            self.log("[live] refused: an enabled market is using synthetic or missing quotes")
             return
         armed = []
         markets = self.cfg.get("markets", {})

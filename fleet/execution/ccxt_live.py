@@ -71,6 +71,8 @@ class CcxtLiveExecutor(Executor):
                 return Fill(False, info="live spot cannot open shorts (arb sell leg refused)")
 
             q = feeds.get(sig.symbol)
+            if q is None or q.source.startswith("sim"):
+                return Fill(False, info="live entry refused: quote is missing or synthetic")
             ref_px = (q.ask or q.last) if q else sig.price
             notional_aud = qty * ref_px * ccy_rate
             if notional_aud > self.max_notional:

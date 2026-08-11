@@ -7,3 +7,4 @@ __pycache__/
 dashboard.html
 deploy/*.tgz
 .vercel/
+public/snapshot.js

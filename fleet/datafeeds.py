@@ -129,6 +129,7 @@ class SimProvider:
         idx = pd.date_range(end=pd.Timestamp.utcnow().floor(freq), periods=n, freq=freq)
         df = pd.DataFrame({"open": openp.values, "high": high, "low": low,
                            "close": close.values, "volume": 1000.0}, index=idx)
+        df.attrs["source"] = "sim"
         self.hist_cache[key] = df
         return df.copy()
 
@@ -189,6 +190,7 @@ class CcxtProvider:
                     continue
                 df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
                 df.index = pd.to_datetime(df.pop("ts"), unit="ms")
+                df.attrs["source"] = v
                 return df
             except Exception:
                 continue
@@ -245,6 +247,7 @@ class YahooProvider:
             df = h.rename(columns={"Open": "open", "High": "high", "Low": "low",
                                    "Close": "close", "Volume": "volume"})
             df = df[["open", "high", "low", "close", "volume"]].tail(bars)
+            df.attrs["source"] = "yahoo"
             self._daily[key] = (time.time(), df)
             return df
         except Exception:
@@ -291,6 +294,7 @@ class StooqProvider:
                 return None
             df = pd.read_csv(io.StringIO(r.text), parse_dates=["Date"], index_col="Date")
             df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]].tail(bars)
+            df.attrs["source"] = "stooq"
             self._cache[symbol] = (time.time(), df)
             return df
         except Exception:
@@ -309,13 +313,14 @@ class FeedRouter:
         self.arb_symbols = m["crypto"].get("arb_symbols", []) if m["crypto"].get("enabled") else []
         self.crypto_symbols = sorted(set(self.arb_symbols) | set(m["crypto"].get("momentum_symbols", []))) \
             if m["crypto"].get("enabled") else []
-        self.slow_symbols = []          # stocks + commodities + fx via yahoo/stooq/sim
+        self.enabled_slow_symbols = []  # configured stocks + commodities + fx
         if m["stocks"].get("enabled"):
-            self.slow_symbols += m["stocks"].get("asx", []) + m["stocks"].get("us", [])
+            self.enabled_slow_symbols += m["stocks"].get("asx", []) + m["stocks"].get("us", [])
         if m["commodities"].get("enabled"):
-            self.slow_symbols += m["commodities"].get("symbols", [])
+            self.enabled_slow_symbols += m["commodities"].get("symbols", [])
         fx_syms = m["fx"].get("symbols", []) if m["fx"].get("enabled") else []
-        self.slow_symbols += fx_syms
+        self.enabled_slow_symbols += fx_syms
+        self.slow_symbols = list(self.enabled_slow_symbols)
         for must in ("AUDUSD=X", "USDJPY=X"):    # always needed for AUD conversion
             if must not in self.slow_symbols:
                 self.slow_symbols.append(must)
@@ -346,7 +351,9 @@ class FeedRouter:
                 except Exception:
                     pass
 
-        self.simulated = self.ccxt_p is None and self.yahoo_p is None and self.stooq_p is None
+        crypto_needs_sim = bool(self.crypto_symbols) and self.ccxt_p is None
+        slow_needs_sim = bool(self.enabled_slow_symbols) and self.yahoo_p is None and self.stooq_p is None
+        self.simulated = force_sim or crypto_needs_sim or slow_needs_sim
         self.source_status = {
             "crypto": "ccxt (live)" if self.ccxt_p else "sim (synthetic)",
             "stocks/commodities": "yahoo (live)" if self.yahoo_p else ("stooq (daily)" if self.stooq_p else "sim (synthetic)"),
@@ -380,14 +387,26 @@ class FeedRouter:
         # sim fills any remaining gap (and everything when fully offline)
         self.sim.step(self.crypto_venues, self.arb_symbols)
         for s in self.crypto_symbols + self.slow_symbols:
-            if s not in self.quotes or self.quotes[s].source.startswith("sim") or (
-                    self.simulated):
+            if s not in self.quotes or self.quotes[s].source.startswith("sim"):
                 self.quotes[s] = self.sim.quote(s)
         for s in self.arb_symbols:
             for v in self.crypto_venues:
                 k = (s, v)
-                if self.simulated or k not in self.quotes or self.quotes[k].source.startswith("sim"):
+                if k not in self.quotes or self.quotes[k].source.startswith("sim"):
                     self.quotes[k] = self.sim.venue_quote(s, v)
+
+    def enabled_quotes_live(self) -> bool:
+        """True only when every enabled trading symbol has a non-synthetic quote."""
+        for symbol in self.crypto_symbols + self.enabled_slow_symbols:
+            quote = self.quotes.get(symbol)
+            if quote is None or quote.source.startswith("sim"):
+                return False
+        for symbol in self.arb_symbols:
+            for venue in self.crypto_venues:
+                quote = self.quotes.get((symbol, venue))
+                if quote is None or quote.source.startswith("sim"):
+                    return False
+        return True
 
     # ---------- access ----------
     def get(self, symbol: str) -> Quote | None:

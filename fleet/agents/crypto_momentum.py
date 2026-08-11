@@ -18,6 +18,9 @@ class CryptoMomentumAgent(Agent):
             if df is None or len(df) < 60:
                 notes.append(f"{sym}:nodata")
                 continue
+            if getattr(ctx, "live", False) and df.attrs.get("source") == "sim":
+                notes.append(f"{sym}:synthetic-history-refused")
+                continue
             e12, e26 = ema(df["close"], 12), ema(df["close"], 26)
             r = rsi(df["close"], 14)
             a = float(atr(df, 14).iloc[-1])
