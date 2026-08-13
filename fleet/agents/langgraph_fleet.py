@@ -202,7 +202,9 @@ def _portfolio_check(name: str, state: GraphState) -> dict:
             frame = _frame(row)
             if frame is not None:
                 series.append(frame["close"].pct_change().tail(60).reset_index(drop=True))
-        corr = pd.concat(series, axis=1).corr().abs() if len(series) >= 2 else pd.DataFrame()
+        returns = pd.concat(series, axis=1) if len(series) >= 2 else pd.DataFrame()
+        returns.columns = range(len(returns.columns))
+        corr = returns.corr().abs()
         pairs = corr.where(np.triu(np.ones(corr.shape), 1).astype(bool)).stack()
         average = _clip(float(pairs.mean()), 0.0, 1.0) if len(pairs) else 0.0
         passed = average <= float(portfolio.get("max_pair_correlation", 0.92))

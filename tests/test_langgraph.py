@@ -25,6 +25,7 @@ def main() -> None:
     assert len(agent.portfolio_nodes) == 10
 
     signals = agent.run(coordinator.ctx)
+    assert "langgraph" in coordinator.ctx.state, agent.note
     state = coordinator.ctx.state["langgraph"]
     assert signals == [], "shadow graph emitted a trade intention"
     assert state["mode"] == "SHADOW"
