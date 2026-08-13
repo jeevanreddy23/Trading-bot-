@@ -11,7 +11,9 @@ Every Quote carries its source so nothing synthetic can masquerade as live.
 from __future__ import annotations
 
 import io
+import json
 import math
+import os
 import random
 import time
 from dataclasses import dataclass
@@ -30,6 +32,45 @@ class Quote:
     ask: float | None = None
     ts: float = 0.0
     source: str = "?"
+
+
+class KrakenStreamProvider:
+    """Reads the atomic public WebSocket snapshot written by kraken_ws.py."""
+
+    def __init__(self, path: str, max_age: float = 45.0):
+        self.path = path
+        self.max_age = max_age
+        self.payload: dict = {}
+
+    def refresh(self) -> bool:
+        try:
+            with open(self.path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if time.time() - float(payload.get("received_ts", 0)) > self.max_age:
+                return False
+            if payload.get("error"):
+                return False
+            self.payload = payload
+            return True
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def quote(self, symbol: str) -> Quote | None:
+        row = self.payload.get("quotes", {}).get(symbol)
+        book = self.payload.get("books", {}).get(symbol, {})
+        if not row or book.get("checksum_valid") is not True:
+            return None
+        return Quote(float(row["last"]), float(row["bid"]), float(row["ask"]),
+                     float(row["received_ts"]), "kraken-ws")
+
+    def ohlcv(self, symbol: str, bars: int = 250) -> pd.DataFrame | None:
+        rows = self.payload.get("candles", {}).get(symbol, [])[-bars:]
+        if len(rows) < 60:
+            return None
+        frame = pd.DataFrame(rows)
+        frame.index = pd.to_datetime(frame.pop("time"), unit="s", utc=True)
+        frame.attrs["source"] = "kraken-ws"
+        return frame
 
 
 # --- synthetic market seed levels (only used by the sim provider; real feeds override) ---
@@ -123,12 +164,13 @@ class SimProvider:
         close = pd.Series(path)
         openp = close.shift(1).fillna(close.iloc[0])
         wig = np.array([abs(rng.gauss(0, vol * math.sqrt(step))) for _ in range(n)])
-        high = np.maximum(openp, close) * (1 + wig)
-        low = np.minimum(openp, close) * (1 - wig)
+        high = np.maximum(openp.to_numpy(), close.to_numpy()) * (1 + wig)
+        low = np.minimum(openp.to_numpy(), close.to_numpy()) * (1 - wig)
         freq = "h" if timeframe == "1h" else "D"
         idx = pd.date_range(end=pd.Timestamp.utcnow().floor(freq), periods=n, freq=freq)
-        df = pd.DataFrame({"open": openp.values, "high": high, "low": low,
-                           "close": close.values, "volume": 1000.0}, index=idx)
+        df = pd.DataFrame({"open": openp.to_numpy(), "high": high, "low": low,
+                           "close": close.to_numpy(), "volume": 1000.0}, index=idx)
+        df.attrs["source"] = "sim"
         self.hist_cache[key] = df
         return df.copy()
 
@@ -189,6 +231,7 @@ class CcxtProvider:
                     continue
                 df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
                 df.index = pd.to_datetime(df.pop("ts"), unit="ms")
+                df.attrs["source"] = v
                 return df
             except Exception:
                 continue
@@ -245,6 +288,7 @@ class YahooProvider:
             df = h.rename(columns={"Open": "open", "High": "high", "Low": "low",
                                    "Close": "close", "Volume": "volume"})
             df = df[["open", "high", "low", "close", "volume"]].tail(bars)
+            df.attrs["source"] = "yahoo"
             self._daily[key] = (time.time(), df)
             return df
         except Exception:
@@ -291,6 +335,7 @@ class StooqProvider:
                 return None
             df = pd.read_csv(io.StringIO(r.text), parse_dates=["Date"], index_col="Date")
             df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]].tail(bars)
+            df.attrs["source"] = "stooq"
             self._cache[symbol] = (time.time(), df)
             return df
         except Exception:
@@ -309,18 +354,23 @@ class FeedRouter:
         self.arb_symbols = m["crypto"].get("arb_symbols", []) if m["crypto"].get("enabled") else []
         self.crypto_symbols = sorted(set(self.arb_symbols) | set(m["crypto"].get("momentum_symbols", []))) \
             if m["crypto"].get("enabled") else []
-        self.slow_symbols = []          # stocks + commodities + fx via yahoo/stooq/sim
+        self.enabled_slow_symbols = []  # configured stocks + commodities + fx
         if m["stocks"].get("enabled"):
-            self.slow_symbols += m["stocks"].get("asx", []) + m["stocks"].get("us", [])
+            self.enabled_slow_symbols += m["stocks"].get("asx", []) + m["stocks"].get("us", [])
         if m["commodities"].get("enabled"):
-            self.slow_symbols += m["commodities"].get("symbols", [])
+            self.enabled_slow_symbols += m["commodities"].get("symbols", [])
         fx_syms = m["fx"].get("symbols", []) if m["fx"].get("enabled") else []
-        self.slow_symbols += fx_syms
+        self.enabled_slow_symbols += fx_syms
+        self.slow_symbols = list(self.enabled_slow_symbols)
         for must in ("AUDUSD=X", "USDJPY=X"):    # always needed for AUD conversion
             if must not in self.slow_symbols:
                 self.slow_symbols.append(must)
 
         self.sim = SimProvider(dig(cfg, "data.sim_seed", 42), dig(cfg, "data.sim_accel", 4))
+        stream_path = dig(cfg, "data.kraken_ws_snapshot", os.getenv(
+            "KRAKEN_WS_OUTPUT", os.path.join(dig(cfg, "loop.state_dir", "state"), "kraken_stream.json")))
+        self.kraken_ws = KrakenStreamProvider(
+            stream_path, float(dig(cfg, "data.max_quote_age_seconds", 45)))
         self.ccxt_p = None
         self.yahoo_p = None
         self.stooq_p = None
@@ -346,9 +396,13 @@ class FeedRouter:
                 except Exception:
                     pass
 
-        self.simulated = self.ccxt_p is None and self.yahoo_p is None and self.stooq_p is None
+        ws_ready = self.kraken_ws.refresh()
+        crypto_needs_sim = bool(self.crypto_symbols) and self.ccxt_p is None and not ws_ready
+        slow_needs_sim = bool(self.enabled_slow_symbols) and self.yahoo_p is None and self.stooq_p is None
+        self.simulated = force_sim or crypto_needs_sim or slow_needs_sim
         self.source_status = {
-            "crypto": "ccxt (live)" if self.ccxt_p else "sim (synthetic)",
+            "crypto": "kraken-ws (live, CRC32)" if ws_ready else (
+                "ccxt (live)" if self.ccxt_p else "sim (synthetic)"),
             "stocks/commodities": "yahoo (live)" if self.yahoo_p else ("stooq (daily)" if self.stooq_p else "sim (synthetic)"),
             "fx": "yahoo (live)" if self.yahoo_p else ("stooq (daily)" if self.stooq_p else "sim (synthetic)"),
         }
@@ -357,10 +411,20 @@ class FeedRouter:
 
     # ---------- refresh ----------
     def refresh(self):
+        ws_ready = self.kraken_ws.refresh()
+        if ws_ready:
+            for symbol in self.crypto_symbols:
+                quote = self.kraken_ws.quote(symbol)
+                if quote:
+                    self.quotes[symbol] = quote
+                    self.quotes[(symbol, "kraken")] = quote
+            self.source_status["crypto"] = "kraken-ws (live, CRC32)"
         if self.ccxt_p:
             vq = self.ccxt_p.venue_quotes(self.arb_symbols or self.crypto_symbols)
             self.quotes.update(vq)
             for s in self.crypto_symbols:                       # canonical = first venue seen
+                if ws_ready and self.quotes.get(s, Quote(0)).source == "kraken-ws":
+                    continue
                 for v in self.crypto_venues:
                     q = vq.get((s, v))
                     if q:
@@ -380,14 +444,27 @@ class FeedRouter:
         # sim fills any remaining gap (and everything when fully offline)
         self.sim.step(self.crypto_venues, self.arb_symbols)
         for s in self.crypto_symbols + self.slow_symbols:
-            if s not in self.quotes or self.quotes[s].source.startswith("sim") or (
-                    self.simulated):
+            if s not in self.quotes or self.quotes[s].source.startswith("sim"):
                 self.quotes[s] = self.sim.quote(s)
         for s in self.arb_symbols:
             for v in self.crypto_venues:
                 k = (s, v)
-                if self.simulated or k not in self.quotes or self.quotes[k].source.startswith("sim"):
+                if k not in self.quotes or self.quotes[k].source.startswith("sim"):
                     self.quotes[k] = self.sim.venue_quote(s, v)
+        self.simulated = not self.enabled_quotes_live()
+
+    def enabled_quotes_live(self) -> bool:
+        """True only when every enabled trading symbol has a non-synthetic quote."""
+        for symbol in self.crypto_symbols + self.enabled_slow_symbols:
+            quote = self.quotes.get(symbol)
+            if quote is None or quote.source.startswith("sim"):
+                return False
+        for symbol in self.arb_symbols:
+            for venue in self.crypto_venues:
+                quote = self.quotes.get((symbol, venue))
+                if quote is None or quote.source.startswith("sim"):
+                    return False
+        return True
 
     # ---------- access ----------
     def get(self, symbol: str) -> Quote | None:
@@ -398,6 +475,10 @@ class FeedRouter:
 
     def get_ohlcv(self, symbol: str, timeframe: str = "1d", bars: int = 250) -> pd.DataFrame | None:
         mkt = market_of(symbol)
+        if mkt == "crypto" and timeframe == "1h" and self.kraken_ws.refresh():
+            df = self.kraken_ws.ohlcv(symbol, bars)
+            if df is not None:
+                return df
         if mkt == "crypto" and self.ccxt_p:
             df = self.ccxt_p.ohlcv(symbol, timeframe, bars)
             if df is not None:

@@ -21,6 +21,21 @@ only what proved itself.** Nothing here is financial advice.
 
 ## What it does
 
+The Kraken path is intentionally split into proposing and authorizing layers:
+
+```text
+Kraken WebSocket v2 (ticker / L2 book / OHLC / trades)
+  -> regime + momentum + reversal + volatility votes
+  -> probability and cost-adjusted expected-value ensemble
+  -> deterministic risk contract (freshness, spread, size, exposure,
+     daily loss, drawdown, 90-day max hold, kill switch)
+  -> CCXT spot executor
+```
+
+The L2 collector verifies Kraken's CRC32 checksum before publishing a book.
+An agent cannot bypass the risk contract, and the Kraken adapter rejects
+margin, opening shorts, synthetic/stale inputs, and live cross-venue arb.
+
 ```
                     ┌─────────────────────────────┐
                     │        Coordinator          │  15s cycle, state.json,
@@ -45,6 +60,12 @@ only what proved itself.** Nothing here is financial advice.
 Every quote is tagged with its source (`kraken`, `yahoo`, `sim:okx`…) so
 synthetic data can never masquerade as live. With no internet, the whole fleet
 runs against a labelled synthetic market — that's the offline demo/test mode.
+The default paper profile enables seven top-level coordinators. Its LangGraph
+coordinator runs exactly 40 deterministic research nodes in parallel: ten
+specialists for each of three Kraken symbols and ten portfolio challengers.
+It is shadow-only by default. The existing crypto ensemble still runs its four
+voters (regime, momentum, reversal, and volatility), and every actionable
+intention remains downstream of the hard risk contract.
 
 ## Quickstart
 
@@ -55,7 +76,10 @@ python run.py --reset            # paper trade on real data, runs forever
 python run.py --cycles 60        # bounded run
 python run.py --sim --cycles 60  # offline synthetic demo
 python backtest/backtest.py      # backtest the rule-sets on ~2y of real data
-python tests/test_engine.py      # 17 deterministic engine checks
+python tests/test_engine.py      # 21 deterministic engine checks
+python tests/test_market_data.py # Kraken v2 schema + official checksum fixture
+python tests/test_healthcheck.py # stale-state and stream integrity probes
+python tests/test_langgraph.py   # 40 nodes, 30 specialists, 10 challengers
 ```
 
 Open `dashboard.html` in a browser — it re-renders every few cycles and
@@ -105,13 +129,51 @@ fleet/coordinator.py    cycle loop, atomic arb handling, halt logic
 fleet/risk.py           sizing + every limit
 fleet/portfolio.py      AUD ledger, positions, trades.jsonl
 fleet/datafeeds.py      ccxt / yahoo / stooq / sim providers + router
-fleet/agents/           the five agents
+fleet/agents/           seven coordinators + 40 LangGraph research nodes
 fleet/execution/        paper + ccxt/OANDA/IBKR live executors
 fleet/dashboard.py      self-contained HTML dashboard
 backtest/backtest.py    vectorised rule-set backtests
 tests/test_engine.py    deterministic engine verification
 docs/GOING_LIVE.md      the real-money checklist
 ```
+
+## Production deployment
+
+The production split keeps execution and secrets on the Sydney VPS while
+Vercel serves a read-only dashboard:
+
+```text
+GitHub main -> Actions tests -> SSH deploy -> OVH Docker Compose
+                                         |-> Kraken fleet
+                                         |-> PostgreSQL snapshots
+                                         |-> authenticated monitor API
+Vercel dashboard -> Kraken public data + Yahoo research data
+                 -> token-authenticated HTTPS -> monitor API
+```
+
+On the VPS, clone the repository to `/opt/trading-bot`, copy `.env.example` to
+`.env`, replace every placeholder, and run `bash deploy/preflight.sh`. The
+container runs in paper mode unless the VPS-local `.env` contains the exact
+live acknowledgement. Kraken keys and PostgreSQL are never sent to Vercel.
+The deployment installs `trading-bot.service`, which re-establishes the Docker
+Compose project after a host reboot. Compose restart policies, bounded logs,
+and freshness-aware health checks cover the fleet, Kraken stream, collector,
+monitor, Caddy, and PostgreSQL services.
+
+Configure these GitHub Actions secrets in the `production` environment:
+
+- `OVH_HOST` and `OVH_USER`
+- `OVH_SSH_KEY` (a deploy-only private key)
+- `OVH_KNOWN_HOSTS` (the pinned `ssh-keyscan` output verified out of band)
+
+Configure `MONITOR_ORIGIN` and `MONITOR_TOKEN` in Vercel. The origin is the
+HTTPS hostname in `MONITOR_DOMAIN`; the token must match the VPS `.env`.
+Pushes to `main` run tests, build the image, and deploy that exact commit.
+
+The public portal uses Kraken REST/WebSocket data for crypto and a separate,
+failure-isolated Yahoo Finance chart feed for gold, silver, crude oil, AUD/USD,
+S&P 500, ASX 200, and BHP. Yahoo values are labelled delayed/research-only and
+are never treated as executable Kraken prices.
 
 ## Disclaimers
 

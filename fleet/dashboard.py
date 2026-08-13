@@ -116,6 +116,7 @@ TEMPLATE = """<!DOCTYPE html>
     <div class="card"><h2>Agents</h2><div class="agents" id="agents"></div></div>
     <div class="card"><h2>Risk limits</h2><div class="risk" id="risk"></div></div>
   </div>
+  <div class="card"><h2>LangGraph 40-agent shadow ensemble <span class="note">30 symbol specialists + 10 portfolio challengers</span></h2><div id="langgraph"></div></div>
   <div class="card"><h2>Recent trades</h2><div id="trades"></div></div>
   <div class="card"><h2>Event log</h2><div class="events" id="events"></div></div>
   <footer>Not financial advice. Paper results include modelled fees + slippage but
@@ -269,6 +270,23 @@ const t2s = ts => new Date(ts*1000).toLocaleTimeString('en-AU',{timeZone:'Austra
   ].map(t=>`<span class="chip">${t}</span>`).join('');
 })();
 
+/* LangGraph shadow ensemble */
+(function(){
+  const g = S.langgraph || {};
+  if (!g.agent_count){ el('langgraph').innerHTML = '<div class="empty">Waiting for the first graph cycle.</div>'; return; }
+  const failed = (g.checks||[]).filter(x=>!x.passed);
+  el('langgraph').innerHTML = `<div class="risk">
+    <span class="chip"><b>${g.agent_count}</b> nodes</span><span class="chip"><b>${esc(g.mode)}</b></span>
+    <span class="chip">checkpoints: <b>${esc(g.persistence)}</b></span>
+    <span class="chip">challenger failures: <b>${failed.length}</b></span></div>
+    <table><thead><tr><th>Rank</th><th>Symbol</th><th>Action</th><th class="num">Probability</th>
+    <th class="num">EV</th><th>Graph gate</th></tr></thead><tbody>${(g.decisions||[]).map(d=>`
+    <tr><td>${d.rank}</td><td class="sym">${esc(d.symbol)}</td><td>${esc(d.action)}</td>
+    <td class="num">${(+d.probability).toFixed(3)}</td><td class="num">${(+d.expected_value_pct).toFixed(3)}%</td>
+    <td class="${d.risk_gate==='PASS'?'up':'down'}">${esc(d.risk_gate)}</td></tr>`).join('')}</tbody></table>
+    <div class="empty">Shadow proposals cannot call the executor; deterministic portfolio risk remains downstream.</div>`;
+})();
+
 /* trades */
 (function(){
   const T = (S.recent_trades||[]).slice().reverse();
@@ -307,7 +325,7 @@ def render_dashboard(state_path: str, out_path: str = "dashboard.html"):
     else:
         state = {"mode": "PAPER", "simulated_data": True, "data_sources": {},
                  "equity_aud": 0, "cash_aud": 0, "day_pnl_aud": 0, "starting_equity": 0,
-                 "positions": [], "equity_series": [], "arb": [], "agents": [],
+                 "positions": [], "equity_series": [], "arb": [], "agents": [], "langgraph": {},
                  "recent_trades": [], "events": [], "halted": False,
                  "generated_syd": "", "risk": {"max_daily_loss_pct": 0,
                  "kill_drawdown_pct": 0, "max_gross_leverage": 0,

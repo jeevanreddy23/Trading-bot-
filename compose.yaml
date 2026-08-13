@@ -1,9 +1,159 @@
+name: trading-bot
+
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fleet}
+      POSTGRES_USER: ${POSTGRES_USER:-fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
   fleet:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env
-    command: ["python", "run.py", "--config", "config.live.yaml", "--live"]
+    init: true
+    env_file: [.env]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command: ["bash", "deploy/run-fleet.sh"]
     volumes:
-      - ./state-live:/app/state/live
+      - fleet-state:/app/state/live
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "fleet", "/app/state/live/state.json", "180"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 180s
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    networks: [internal]
+
+  kraken-stream:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      KRAKEN_WS_SYMBOLS: ${KRAKEN_WS_SYMBOLS:-BTC/AUD,ETH/AUD,SOL/AUD}
+      KRAKEN_WS_OUTPUT: /app/state/live/kraken_stream.json
+    command: ["python", "-m", "fleet.market_data.kraken_ws"]
+    volumes:
+      - fleet-state:/app/state/live
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "stream", "/app/state/live/kraken_stream.json", "90"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    networks: [internal]
+
+  collector:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      FLEET_STATE_PATH: /app/state/live/state.json
+    command: ["python", "-m", "monitor.collector"]
+    volumes:
+      - fleet-state:/app/state/live:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "database", "180"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 180s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    networks: [internal]
+
+  monitor:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      MONITOR_TOKEN: ${MONITOR_TOKEN:?set MONITOR_TOKEN in .env}
+    command: ["uvicorn", "monitor.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    expose: ["8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "deploy/healthcheck.py", "http", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      MONITOR_DOMAIN: ${MONITOR_DOMAIN:?set MONITOR_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [monitor]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://monitor:8000/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  postgres-data:
+  fleet-state:
+  caddy-data:
+  caddy-config:

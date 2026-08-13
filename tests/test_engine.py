@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,6 +30,13 @@ def main():
     co = Coordinator(cfg, force_sim=True, reset=True, quiet=True)
     co.feeds.refresh()
     L, F = co.ledger, co.feeds
+    check("all configured research agents enabled",
+          {agent.name for agent in co.agents} == {
+              "crypto_arb", "crypto_ensemble", "crypto_momentum",
+              "langgraph_40", "stocks", "commodities", "fx",
+          }, ", ".join(agent.name for agent in co.agents))
+    check("synthetic enabled markets fail live-data readiness",
+          F.simulated and not F.enabled_quotes_live())
     eq0 = L.equity(F.quotes)
     check("starting equity", abs(eq0 - cfg["starting_equity"]) < 1e-6, f"= {eq0}")
 
@@ -112,7 +120,23 @@ def main():
     check("daily loss limit blocks new entries", q == 0, r)
     L.day_start_equity = L.equity(F.quotes)
 
-    # --- 7. kill file halts and flattens ---
+    # --- 7. live profile rejects synthetic inputs even when paper profile permits them ---
+    cfg["mode"] = "live"
+    q, r = co.risk.evaluate(Signal("t", "crypto", "BTC/USDT", "buy", 1.0, "",
+                                   F.get("BTC/USDT").last), L, F.quotes)
+    check("live risk contract rejects synthetic quote", q == 0, r)
+    cfg["mode"] = "paper"
+
+    # --- 8. 90-day maximum holding period creates a risk-reducing close ---
+    co._exec(Signal("test", "crypto", "BTC/USDT", "buy", 1.0, "age test",
+                    F.get("BTC/USDT").last), 0.001)
+    aged = L.positions[L.pos_key("BTC/USDT")]
+    aged.opened_ts = time.time() - (cfg["risk"]["max_hold_days"] + 1) * 86400
+    closes = co.max_hold_checks()
+    check("90-day holding limit creates close", any(s.symbol == "BTC/USDT" for s in closes))
+    co.process_signals(closes)
+
+    # --- 9. kill file halts and flattens ---
     open(co.risk.kill_file, "w").close()
     co._exec(Signal("test", "crypto", "BTC/USDT", "buy", 1.0, "pre-kill", F.get("BTC/USDT").last), 0.01)
     co.cycle()

@@ -14,6 +14,8 @@ data:
   provider_order: [ccxt, sim]
   sim_seed: 42
   sim_accel: 1
+  kraken_ws_snapshot: state/live/kraken_stream.json
+  max_quote_age_seconds: 45
 
 markets:
   crypto:
@@ -35,7 +37,9 @@ markets:
 
 agents:
   crypto_arb:      {enabled: false, interval: 15, min_net_edge_bps: 5, max_leg_notional_aud: 0}
-  crypto_momentum: {enabled: true, interval: 300}
+  crypto_ensemble: {enabled: true, interval: 300, min_probability: 0.64, min_ev_pct: 0.08, max_spread_pct: 0.20, max_quote_age_seconds: 45, max_atr_pct: 3.5, round_trip_fees_pct: 0.8}
+  langgraph_40:     {enabled: true, interval: 300, shadow_only: true, min_probability: 0.70, min_ev_pct: 0.12, exit_probability: 0.45, max_spread_pct: 0.20, max_quote_age_seconds: 45, max_atr_pct: 3.5, round_trip_fees_pct: 0.8, max_pair_correlation: 0.92, max_concurrency: 12}
+  crypto_momentum: {enabled: false, interval: 300}
   stocks:          {enabled: false, interval: 600}
   commodities:     {enabled: false, interval: 600}
   fx:              {enabled: false, interval: 300}
@@ -48,6 +52,9 @@ risk:
   max_market_exposure_pct: 25
   max_daily_loss_pct: 1.0
   kill_drawdown_pct: 3.0
+  max_spread_pct: 0.20
+  max_quote_age_seconds: 45
+  max_hold_days: 90
   allow_shorts: {crypto: false, stocks: false, commodities: false, fx: false}
 
 execution:
@@ -58,4 +65,5 @@ execution:
     crypto_venue: kraken
     confirm_env: LIVE_TRADING_ACK
     max_order_notional_aud: 20
+    margin_enabled: false
     oanda_env: practice

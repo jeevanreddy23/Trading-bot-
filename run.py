@@ -17,6 +17,7 @@ import argparse
 from fleet.config import load_config
 from fleet.coordinator import Coordinator
 from fleet.dashboard import render_dashboard
+from monitor.local_snapshot import write_local_snapshot
 
 
 def main():
@@ -47,6 +48,7 @@ def main():
 
     def on_cycle(c):
         counter["n"] += 1
+        write_local_snapshot(c.state_path, "public/snapshot.js")
         if counter["n"] % max(1, args.dash_every) == 0:
             render_dashboard(c.state_path, "dashboard.html")
 

@@ -25,6 +25,8 @@ class CcxtLiveExecutor(Executor):
     def __init__(self, cfg: dict):
         import ccxt
         self.cfg = cfg
+        if dig(cfg, "execution.live.margin_enabled", False):
+            raise RuntimeError("margin execution is not supported by this spot-only safety adapter")
         venue = dig(cfg, "execution.live.crypto_venue", "kraken")
         self.venue = venue
         key = os.environ.get(f"{venue.upper()}_API_KEY")
@@ -71,6 +73,8 @@ class CcxtLiveExecutor(Executor):
                 return Fill(False, info="live spot cannot open shorts (arb sell leg refused)")
 
             q = feeds.get(sig.symbol)
+            if q is None or q.source.startswith("sim"):
+                return Fill(False, info="live entry refused: quote is missing or synthetic")
             ref_px = (q.ask or q.last) if q else sig.price
             notional_aud = qty * ref_px * ccy_rate
             if notional_aud > self.max_notional:

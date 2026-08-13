@@ -36,7 +36,8 @@ class Coordinator:
         self.ledger = Ledger(cfg, self.state_dir)
         self.risk = RiskManager(cfg)
         self.agents = build_agents(cfg)
-        self.ctx = SimpleNamespace(feeds=self.feeds, ledger=self.ledger, cfg=cfg, state={})
+        self.ctx = SimpleNamespace(feeds=self.feeds, ledger=self.ledger, risk=self.risk,
+                                   cfg=cfg, state={})
         self.state_path = os.path.join(self.state_dir, "state.json")
         self.log_path = os.path.join(self.state_dir, "fleet.log")
         self.quiet = quiet
@@ -46,6 +47,7 @@ class Coordinator:
         self.executors: dict = {"paper": PaperExecutor(cfg)}
         if live:
             self._arm_live()
+        self.ctx.live = self.live
 
     # ------------------------------------------------------------------ live
     def _arm_live(self):
@@ -57,8 +59,9 @@ class Coordinator:
         if os.environ.get(ack_var) != "I_UNDERSTAND_THE_RISKS":
             self.log(f"[live] refused: env {ack_var} != I_UNDERSTAND_THE_RISKS")
             return
-        if self.feeds.simulated:
-            self.log("[live] refused: no live data feed reachable (sim only)")
+        self.feeds.refresh()
+        if self.feeds.simulated or not self.feeds.enabled_quotes_live():
+            self.log("[live] refused: an enabled market is using synthetic or missing quotes")
             return
         armed = []
         markets = self.cfg.get("markets", {})
@@ -133,6 +136,14 @@ class Coordinator:
                                    venue=pos.venue, tag=pos.tag))
         return sigs
 
+    def max_hold_checks(self) -> list:
+        max_days = float(self.cfg["risk"].get("max_hold_days", 90))
+        cutoff = time.time() - max_days * 86400
+        return [Signal("risk_max_hold", p.market, p.symbol, "close", 1.0,
+                       f"maximum holding period {max_days:g}d reached", 0.0,
+                       venue=p.venue, tag=p.tag)
+                for p in self.ledger.positions.values() if p.opened_ts <= cutoff]
+
     def flatten_all(self, reason: str) -> list:
         return [Signal("risk_halt", p.market, p.symbol, "close", 1.0, reason,
                        0.0, venue=p.venue, tag=p.tag)
@@ -178,11 +189,17 @@ class Coordinator:
             if s.action == "close":
                 self._exec(s, 0.0)
                 continue
-            qty, reason = self.risk.evaluate(s, self.ledger, self.feeds.quotes)
-            if qty <= 0:
-                self.log(f"x {s.agent} {s.label()}: {reason}")
+            assessment = self.risk.assess(s, self.ledger, self.feeds.quotes)
+            decision = self.ctx.state.get("decisions", {}).get(s.symbol)
+            if decision is not None:
+                decision["deterministic_risk"] = {
+                    "status": "PASS" if assessment.passed else "FAIL",
+                    "reason": assessment.reason, "checks": assessment.checks,
+                }
+            if not assessment.passed:
+                self.log(f"x {s.agent} {s.label()}: {assessment.reason}")
                 continue
-            self._exec(s, qty)
+            self._exec(s, assessment.qty)
 
     # ----------------------------------------------------------------- cycle
     def cycle(self) -> float:
@@ -191,7 +208,7 @@ class Coordinator:
 
         halted = self.risk.check_halt(self.ledger, self.feeds.quotes)
         kill = self.risk.kill_switch()
-        signals = self.stop_checks()
+        signals = self.max_hold_checks() + self.stop_checks()
         if (halted or kill) and self.ledger.positions:
             why = "drawdown kill-switch" if halted else "manual KILL file"
             self.log(f"! HALT: flattening all positions ({why})")
@@ -249,6 +266,8 @@ class Coordinator:
             "positions": positions,
             "equity_series": self.ledger.equity_series[-1500:],
             "arb": self.ctx.state.get("arb", []),
+            "decisions": list(self.ctx.state.get("decisions", {}).values()),
+            "langgraph": self.ctx.state.get("langgraph", {}),
             "agents": [{"name": a.name, "market": a.market, "interval": a.interval,
                         "note": a.note} for a in self.agents],
             "recent_trades": self.ledger.recent_trades(25),
