@@ -33,7 +33,7 @@ def main():
     check("all configured research agents enabled",
           {agent.name for agent in co.agents} == {
               "crypto_arb", "crypto_ensemble", "crypto_momentum",
-              "stocks", "commodities", "fx",
+              "langgraph_40", "stocks", "commodities", "fx",
           }, ", ".join(agent.name for agent in co.agents))
     check("synthetic enabled markets fail live-data readiness",
           F.simulated and not F.enabled_quotes_live())

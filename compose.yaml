@@ -22,9 +22,18 @@ services:
     restart: unless-stopped
     init: true
     env_file: [.env]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-fleet}
+      PGUSER: ${POSTGRES_USER:-fleet}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     command: ["bash", "deploy/run-fleet.sh"]
     volumes:
       - fleet-state:/app/state/live
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "deploy/healthcheck.py", "fleet", "/app/state/live/state.json", "180"]
       interval: 30s

@@ -36,7 +36,8 @@ class Coordinator:
         self.ledger = Ledger(cfg, self.state_dir)
         self.risk = RiskManager(cfg)
         self.agents = build_agents(cfg)
-        self.ctx = SimpleNamespace(feeds=self.feeds, ledger=self.ledger, cfg=cfg, state={})
+        self.ctx = SimpleNamespace(feeds=self.feeds, ledger=self.ledger, risk=self.risk,
+                                   cfg=cfg, state={})
         self.state_path = os.path.join(self.state_dir, "state.json")
         self.log_path = os.path.join(self.state_dir, "fleet.log")
         self.quiet = quiet
@@ -266,6 +267,7 @@ class Coordinator:
             "equity_series": self.ledger.equity_series[-1500:],
             "arb": self.ctx.state.get("arb", []),
             "decisions": list(self.ctx.state.get("decisions", {}).values()),
+            "langgraph": self.ctx.state.get("langgraph", {}),
             "agents": [{"name": a.name, "market": a.market, "interval": a.interval,
                         "note": a.note} for a in self.agents],
             "recent_trades": self.ledger.recent_trades(25),

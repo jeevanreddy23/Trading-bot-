@@ -71,5 +71,6 @@ assert.ok(inline);
 new Function(inline);
 assert.match(html, /wss:\/\/ws\.kraken\.com\/v2/);
 assert.match(html, /\/api\/yahoo/);
-assert.match(html, /6 fleet agents/);
+assert.match(html, /40 graph agents/);
+assert.match(html, /LangGraph · 40-agent shadow ensemble/);
 console.log("Kraken, Yahoo and portal checks passed");

@@ -28,6 +28,7 @@ jobs:
       - run: python tests/test_market_data.py
       - run: python tests/test_monitor.py
       - run: python tests/test_healthcheck.py
+      - run: python tests/test_langgraph.py
       - run: node tests/test_market_api.mjs
       - name: Validate deployment harness
         run: |

@@ -60,9 +60,12 @@ margin, opening shorts, synthetic/stale inputs, and live cross-venue arb.
 Every quote is tagged with its source (`kraken`, `yahoo`, `sim:okx`…) so
 synthetic data can never masquerade as live. With no internet, the whole fleet
 runs against a labelled synthetic market — that's the offline demo/test mode.
-The default paper profile enables all six top-level agents. Its crypto ensemble
-also runs all four voters (regime, momentum, reversal, and volatility) before
-the hard risk contract sees an intention.
+The default paper profile enables seven top-level coordinators. Its LangGraph
+coordinator runs exactly 40 deterministic research nodes in parallel: ten
+specialists for each of three Kraken symbols and ten portfolio challengers.
+It is shadow-only by default. The existing crypto ensemble still runs its four
+voters (regime, momentum, reversal, and volatility), and every actionable
+intention remains downstream of the hard risk contract.
 
 ## Quickstart
 
@@ -76,6 +79,7 @@ python backtest/backtest.py      # backtest the rule-sets on ~2y of real data
 python tests/test_engine.py      # 21 deterministic engine checks
 python tests/test_market_data.py # Kraken v2 schema + official checksum fixture
 python tests/test_healthcheck.py # stale-state and stream integrity probes
+python tests/test_langgraph.py   # 40 nodes, 30 specialists, 10 challengers
 ```
 
 Open `dashboard.html` in a browser — it re-renders every few cycles and
@@ -125,7 +129,7 @@ fleet/coordinator.py    cycle loop, atomic arb handling, halt logic
 fleet/risk.py           sizing + every limit
 fleet/portfolio.py      AUD ledger, positions, trades.jsonl
 fleet/datafeeds.py      ccxt / yahoo / stooq / sim providers + router
-fleet/agents/           six fleet agents + four crypto ensemble voters
+fleet/agents/           seven coordinators + 40 LangGraph research nodes
 fleet/execution/        paper + ccxt/OANDA/IBKR live executors
 fleet/dashboard.py      self-contained HTML dashboard
 backtest/backtest.py    vectorised rule-set backtests

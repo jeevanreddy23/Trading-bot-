@@ -45,6 +45,7 @@ agents:
   crypto_arb:      {enabled: true, interval: 15, min_net_edge_bps: 5, max_leg_notional_aud: 500}
   crypto_momentum: {enabled: true, interval: 300}
   crypto_ensemble: {enabled: true, interval: 300, min_probability: 0.62, min_ev_pct: 0.05, max_spread_pct: 0.25, max_quote_age_seconds: 45, max_atr_pct: 4.0, round_trip_fees_pct: 0.4}
+  langgraph_40:     {enabled: true, interval: 300, shadow_only: true, min_probability: 0.68, min_ev_pct: 0.08, exit_probability: 0.45, max_spread_pct: 0.25, max_quote_age_seconds: 45, max_atr_pct: 4.0, round_trip_fees_pct: 0.4, max_pair_correlation: 0.92, max_concurrency: 12}
   stocks:          {enabled: true, interval: 600}
   commodities:     {enabled: true, interval: 600}
   fx:              {enabled: true, interval: 300}

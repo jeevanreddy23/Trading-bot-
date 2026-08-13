@@ -3,12 +3,14 @@ from .crypto_arb import CryptoArbAgent
 from .crypto_ensemble import CryptoEnsembleAgent
 from .crypto_momentum import CryptoMomentumAgent
 from .fx import FXAgent
+from .langgraph_fleet import CryptoLangGraphAgent
 from .stocks import StocksAgent
 
 REGISTRY = {
     "crypto_arb": (CryptoArbAgent, "crypto"),
     "crypto_ensemble": (CryptoEnsembleAgent, "crypto"),
     "crypto_momentum": (CryptoMomentumAgent, "crypto"),
+    "langgraph_40": (CryptoLangGraphAgent, "crypto"),
     "stocks": (StocksAgent, "stocks"),
     "commodities": (CommoditiesAgent, "commodities"),
     "fx": (FXAgent, "fx"),
